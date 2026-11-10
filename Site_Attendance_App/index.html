@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111a24">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Site Attendance</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo">⏱</div>
+    <div><div id="projName" class="proj">Site Attendance</div><div class="sub">Face recognition time clock</div></div>
+  </div>
+  <div class="clock"><div id="clockTime">--:--:--</div><div id="clockDate"></div></div>
+  <div class="top-actions">
+    <button id="fsBtn" class="ghost" title="Full screen">⛶</button>
+    <button id="adminBtn" class="ghost">Admin</button>
+    <button id="backBtn" class="ghost hidden">◀ Back to time clock</button>
+  </div>
+</header>
+
+<main id="kiosk" class="view">
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="status" class="status">Starting…</div>
+  </div>
+  <aside class="recent">
+    <div class="recent-head"><span>Today</span><span id="todayCount" class="pill">0 timed in</span></div>
+    <ol id="recentList"></ol>
+  </aside>
+
+  <section id="punchPanel" class="sheet hidden">
+    <div class="who"><img id="whoThumb" alt=""><div><div id="whoName" class="who-name"></div><div id="whoTeam" class="muted"></div></div></div>
+    <div id="punchBtns" class="punch-grid"></div>
+    <button id="cancelPunch" class="ghost wide">Not me / Cancel</button>
+  </section>
+
+  <section id="doneCard" class="sheet done hidden">
+    <div class="tick">✓</div>
+    <div id="doneName" class="who-name"></div>
+    <div id="doneType" class="done-type"></div>
+    <div id="doneTime" class="done-time"></div>
+  </section>
+</main>
+
+<main id="admin" class="view hidden">
+  <div id="backupWarn" class="banner hidden"></div>
+  <nav class="tabs">
+    <button data-tab="workers" class="active">Workers</button>
+    <button data-tab="records">Daily records</button>
+    <button data-tab="export">Export &amp; backup</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <section id="tab-workers" class="tab"></section>
+  <section id="tab-records" class="tab hidden"></section>
+  <section id="tab-export" class="tab hidden"></section>
+  <section id="tab-settings" class="tab hidden"></section>
+</main>
+
+<div id="modal" class="modal hidden"><div id="modalBox" class="modal-box"></div></div>
+
+<script src="face-api.js"></script>
+<script src="xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

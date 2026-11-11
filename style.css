@@ -132,3 +132,5 @@ td.flag{color:var(--warn)}
   .top-actions button{padding:8px 10px}
   #fsBtn{display:none}
 }
+.brand>div:last-child{min-width:0;overflow:hidden}
+.clock,.top-actions{flex:0 0 auto}

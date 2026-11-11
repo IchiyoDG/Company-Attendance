@@ -579,17 +579,36 @@ async function shareFiles(files, title) {
     return 'shared';
   } catch (e) { return e && e.name === 'AbortError' ? 'cancelled' : 'unsupported'; }
 }
-function download(blob, name) { const a = el('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) {}
+  const ta = el('textarea', { style: 'position:fixed;top:-1000px' }); ta.value = t; document.body.append(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} ta.remove(); return ok;
+}
+function blobToDataURL(blob) { return new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(blob); }); }
+// Shown after every download: for browsers (e.g. Huawei/Honor) that do not save files made by web apps
+async function fallbackBox(holder, blob, name, copyLabel, copyFn, copyDone) {
+  holder.innerHTML = '';
+  const m = el('div', { class: 'msg' }), url = await blobToDataURL(blob);
+  holder.append(el('div', { class: 'consent', style: 'margin-top:8px' },
+    el('div', { style: 'color:var(--text);font-weight:600;margin-bottom:6px' }, "Can't find the file? Try one of these:"),
+    el('div', { class: 'row' },
+      el('a', { href: url, download: name, target: '_blank', class: 'shrink', style: 'color:var(--accent);padding:10px 0' }, '1) Tap here, or press and hold → "Download link"'),
+      el('button', { class: 'shrink', onclick: async () => { const ok = await copyText(await copyFn()); m.className = ok ? 'msg ok' : 'msg err'; m.textContent = ok ? copyDone : 'Copy failed on this browser.'; } }, '2) ' + copyLabel)), m));
+}
+function download(blob, name) { const a = el('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 120000); }
 
 function renderExport() {
   const box = $('#tab-export'); box.innerHTML = '';
-  const f = el('input', { type: 'date', value: monday() }), t = el('input', { type: 'date', value: dateKey() }), msg = el('div', { class: 'msg' });
+  const f = el('input', { type: 'date', value: monday() }), t = el('input', { type: 'date', value: dateKey() }), msg = el('div', { class: 'msg' }), xfb = el('div');
   box.append(el('h3', {}, 'Attendance report (Excel)'),
     el('div', { class: 'row' }, el('div', {}, el('label', {}, 'From'), f), el('div', {}, el('label', {}, 'To'), t),
       el('button', { class: 'primary shrink', onclick: async () => {
         if (!f.value || !t.value || f.value > t.value) { msg.className = 'msg err'; msg.textContent = 'Pick a valid date range.'; return; }
-        const { wb, n } = await buildWorkbook(f.value, t.value);
-        XLSX.writeFile(wb, `Attendance_${f.value}_to_${t.value}.xlsx`); msg.className = 'msg ok'; msg.textContent = `Report downloaded (${n} punches).`;
+        const { wb, n } = await buildWorkbook(f.value, t.value), name = `Attendance_${f.value}_to_${t.value}.xlsx`;
+        const blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        download(blob, name); msg.className = 'msg ok'; msg.textContent = `Report saved as ${name} (${n} punches) – check the browser's Downloads.`;
+        fallbackBox(xfb, blob, name, 'Copy report as a table', async () => ['DAILY', XLSX.utils.sheet_to_csv(wb.Sheets.Daily, { FS: '\t' }), '', 'TOTALS', XLSX.utils.sheet_to_csv(wb.Sheets.Totals, { FS: '\t' })].join('\n'),
+          'Copied. Paste it into Excel or Google Sheets (it fills the columns), or into Gmail/Viber/Messenger to send it.');
       } }, 'Download Excel'),
       el('button', { class: 'shrink', onclick: async () => {
         if (!f.value || !t.value || f.value > t.value) { msg.className = 'msg err'; msg.textContent = 'Pick a valid date range.'; return; }
@@ -603,9 +622,9 @@ function renderExport() {
         }
         msg.className = r === 'unsupported' ? 'msg err' : 'msg ok';
         msg.textContent = r === 'shared' ? `Shared: ${what}.` : r === 'cancelled' ? 'Sharing cancelled.' : 'This browser cannot share files – use Download Excel, then share it from the Downloads folder.';
-      } }, 'Share…')), msg,
+      } }, 'Share…')), msg, xfb,
     el('p', { class: 'note' }, 'Sheets: Daily (one row per worker per day), Totals, Punch log (every punch), Corrections (every manual change with reason). Share… opens the phone\'s share menu (Gmail, Messenger, Viber, Drive). If the phone cannot share the .xlsx file, it shares the Daily and Totals sheets as CSV files, which open in Excel; the full workbook is always available with Download Excel.'));
-  const snaps = el('input', { type: 'checkbox', checked: true }), bmsg = el('div', { class: 'msg' });
+  const snaps = el('input', { type: 'checkbox', checked: true }), bmsg = el('div', { class: 'msg' }), bfb = el('div');
   const file = el('input', { type: 'file', accept: '.json,.txt,application/json,text/plain' });
   async function backupText() {
     const data = { app: 'site-attendance', version: 1, exported: new Date().toISOString(), settings: S, workers: await DB.all('workers'), punches: await DB.all('punches'), audit: await DB.all('audit') };
@@ -616,8 +635,10 @@ function renderExport() {
     el('p', { class: 'note' }, 'Everything lives only on this device. Make a backup at the end of every day and send it to your laptop or Drive. The backup includes enrolled faces, so keep it private.'),
     el('label', { style: 'display:flex;align-items:center;color:var(--text)' }, snaps, 'Include attendance photos (bigger file)'),
     el('div', { class: 'row' }, el('button', { class: 'primary shrink', onclick: async () => {
-      download(new Blob([await backupText()], { type: 'application/json' }), `Attendance_backup_${dateKey()}.json`);
-      S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); bmsg.className = 'msg ok'; bmsg.textContent = 'Backup downloaded (Downloads folder).';
+      const blob = new Blob([await backupText()], { type: 'application/json' }), name = `Attendance_backup_${dateKey()}.json`;
+      download(blob, name);
+      S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); bmsg.className = 'msg ok'; bmsg.textContent = `Backup saved as ${name} – check the browser's Downloads.`;
+      fallbackBox(bfb, blob, name, 'Copy backup as text', () => blob.text(), 'Copied. Paste it into an email to yourself (Gmail), then on the PC save it as a .txt file. Restore accepts that file.');
     } }, 'Download backup'),
     el('button', { class: 'shrink', onclick: async () => {
       const file = new File([await backupText()], `Attendance_backup_${dateKey()}.txt`, { type: 'text/plain' });
@@ -625,7 +646,7 @@ function renderExport() {
       if (r === 'shared') { S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); }
       bmsg.className = r === 'unsupported' ? 'msg err' : 'msg ok';
       bmsg.textContent = r === 'shared' ? 'Backup shared (saved as .txt – Restore accepts it as is).' : r === 'cancelled' ? 'Sharing cancelled.' : 'This browser cannot share files – use Download backup.';
-    } }, 'Share backup…')), bmsg,
+    } }, 'Share backup…')), bmsg, bfb,
     el('h3', { style: 'margin-top:22px' }, 'Restore'),
     el('p', { class: 'note' }, 'Use this on a new or reset phone. It REPLACES all data on this device with the backup.'),
     el('div', { class: 'row' }, file, el('button', { class: 'danger shrink', onclick: async () => {

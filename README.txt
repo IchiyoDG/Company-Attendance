@@ -35,8 +35,11 @@ WHAT IT DOES
    - Workers: look at the camera, blink or turn the head slightly when asked, tap the highlighted punch.
    - Missed or wrong punch: Admin > Daily records > tap the cell > enter time and reason.
      Every change is logged in the Corrections sheet.
-   - End of day: Admin > Export & backup > Download Excel AND Download backup.
-     Send both to the engineer's laptop or Drive.
+   - End of day: Admin > Export & backup.
+       "Share..." sends the report straight to Gmail/Messenger/Viber/Drive (as CSV files if the phone
+       cannot share .xlsx). "Download Excel" saves the full workbook in the phone's Downloads folder.
+       "Share backup..." sends the backup (.txt file); "Download backup" saves it (.json) in Downloads.
+     Send both the report and the backup to the engineer's laptop or Drive.
      IMPORTANT: if the phone is reset, lost, or Chrome data is cleared, records are gone unless backed up.
 
 5) NEW OR REPLACEMENT DEVICE

@@ -571,6 +571,14 @@ async function buildWorkbook(from, to) {
   return { wb, n: all.length };
 }
 
+async function shareFiles(files, title) {
+  // Android Chrome only shares some file types (e.g. .csv, .txt, .pdf, images) – not .xlsx or .json
+  try {
+    if (!navigator.canShare || !navigator.canShare({ files })) return 'unsupported';
+    await navigator.share({ files, title });
+    return 'shared';
+  } catch (e) { return e && e.name === 'AbortError' ? 'cancelled' : 'unsupported'; }
+}
 function download(blob, name) { const a = el('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 
 function renderExport() {
@@ -582,19 +590,42 @@ function renderExport() {
         if (!f.value || !t.value || f.value > t.value) { msg.className = 'msg err'; msg.textContent = 'Pick a valid date range.'; return; }
         const { wb, n } = await buildWorkbook(f.value, t.value);
         XLSX.writeFile(wb, `Attendance_${f.value}_to_${t.value}.xlsx`); msg.className = 'msg ok'; msg.textContent = `Report downloaded (${n} punches).`;
-      } }, 'Download Excel')), msg,
-    el('p', { class: 'note' }, 'Sheets: Daily (one row per worker per day), Totals, Punch log (every punch), Corrections (every manual change with reason).'));
+      } }, 'Download Excel'),
+      el('button', { class: 'shrink', onclick: async () => {
+        if (!f.value || !t.value || f.value > t.value) { msg.className = 'msg err'; msg.textContent = 'Pick a valid date range.'; return; }
+        const { wb } = await buildWorkbook(f.value, t.value), base = `Attendance_${f.value}_to_${t.value}`;
+        const xl = new File([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], base + '.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        let r = await shareFiles([xl], base);
+        let what = 'Excel file';
+        if (r === 'unsupported') {
+          const csv = n => new File(['\ufeff' + XLSX.utils.sheet_to_csv(wb.Sheets[n])], `${base}_${n.replace(' ', '_')}.csv`, { type: 'text/csv' });
+          r = await shareFiles([csv('Daily'), csv('Totals')], base); what = 'Daily and Totals sheets (CSV, open in Excel)';
+        }
+        msg.className = r === 'unsupported' ? 'msg err' : 'msg ok';
+        msg.textContent = r === 'shared' ? `Shared: ${what}.` : r === 'cancelled' ? 'Sharing cancelled.' : 'This browser cannot share files – use Download Excel, then share it from the Downloads folder.';
+      } }, 'Share…')), msg,
+    el('p', { class: 'note' }, 'Sheets: Daily (one row per worker per day), Totals, Punch log (every punch), Corrections (every manual change with reason). Share… opens the phone\'s share menu (Gmail, Messenger, Viber, Drive). If the phone cannot share the .xlsx file, it shares the Daily and Totals sheets as CSV files, which open in Excel; the full workbook is always available with Download Excel.'));
   const snaps = el('input', { type: 'checkbox', checked: true }), bmsg = el('div', { class: 'msg' });
-  const file = el('input', { type: 'file', accept: '.json,application/json' });
+  const file = el('input', { type: 'file', accept: '.json,.txt,application/json,text/plain' });
+  async function backupText() {
+    const data = { app: 'site-attendance', version: 1, exported: new Date().toISOString(), settings: S, workers: await DB.all('workers'), punches: await DB.all('punches'), audit: await DB.all('audit') };
+    if (!snaps.checked) data.punches = data.punches.map(p => ({ ...p, snap: null }));
+    return JSON.stringify(data);
+  }
   box.append(el('h3', { style: 'margin-top:22px' }, 'Backup'),
     el('p', { class: 'note' }, 'Everything lives only on this device. Make a backup at the end of every day and send it to your laptop or Drive. The backup includes enrolled faces, so keep it private.'),
     el('label', { style: 'display:flex;align-items:center;color:var(--text)' }, snaps, 'Include attendance photos (bigger file)'),
     el('div', { class: 'row' }, el('button', { class: 'primary shrink', onclick: async () => {
-      const data = { app: 'site-attendance', version: 1, exported: new Date().toISOString(), settings: S, workers: await DB.all('workers'), punches: await DB.all('punches'), audit: await DB.all('audit') };
-      if (!snaps.checked) data.punches = data.punches.map(p => ({ ...p, snap: null }));
-      download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `Attendance_backup_${dateKey()}.json`);
-      S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); bmsg.className = 'msg ok'; bmsg.textContent = 'Backup downloaded.';
-    } }, 'Download backup')), bmsg,
+      download(new Blob([await backupText()], { type: 'application/json' }), `Attendance_backup_${dateKey()}.json`);
+      S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); bmsg.className = 'msg ok'; bmsg.textContent = 'Backup downloaded (Downloads folder).';
+    } }, 'Download backup'),
+    el('button', { class: 'shrink', onclick: async () => {
+      const file = new File([await backupText()], `Attendance_backup_${dateKey()}.txt`, { type: 'text/plain' });
+      const r = await shareFiles([file], 'Attendance backup');
+      if (r === 'shared') { S.lastBackup = Date.now(); await saveSettings(); await backupBanner(); }
+      bmsg.className = r === 'unsupported' ? 'msg err' : 'msg ok';
+      bmsg.textContent = r === 'shared' ? 'Backup shared (saved as .txt – Restore accepts it as is).' : r === 'cancelled' ? 'Sharing cancelled.' : 'This browser cannot share files – use Download backup.';
+    } }, 'Share backup…')), bmsg,
     el('h3', { style: 'margin-top:22px' }, 'Restore'),
     el('p', { class: 'note' }, 'Use this on a new or reset phone. It REPLACES all data on this device with the backup.'),
     el('div', { class: 'row' }, file, el('button', { class: 'danger shrink', onclick: async () => {
